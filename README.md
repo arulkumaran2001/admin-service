@@ -1,0 +1,2 @@
+# admin-service
+contains devops
