@@ -27,3 +27,13 @@ spec:
 
           ports:
             - containerPort: 9007
+
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres-service.database.svc.cluster.local:5432/postgres
+
+            - name: SPRING_DATASOURCE_USERNAME
+              value: postgres
+
+            - name: SPRING_DATASOURCE_PASSWORD
+              value: "2001"
