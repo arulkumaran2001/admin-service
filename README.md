@@ -1,220 +1,313 @@
-# admin-service
-contains devops
+# Admin Service
 
-### Reference Documentation
+Spring Boot REST API deployed on Kubernetes using Docker and Minikube.
 
-For further reference, please consider the following sections:
-
-* [Official Apache Maven documentation](https://maven.apache.org/guides/index.html)
-* [Spring Boot Maven Plugin Reference Guide](https://docs.spring.io/spring-boot/4.0.5/maven-plugin)
-* [Create an OCI image](https://docs.spring.io/spring-boot/4.0.5/maven-plugin/build-image.html)
-* [Spring Data JPA](https://docs.spring.io/spring-boot/4.0.5/reference/data/sql.html#data.sql.jpa-and-spring-data)
-* [SpringDoc OpenAPI](https://springdoc.org/)
-* [Spring Web](https://docs.spring.io/spring-boot/4.0.5/reference/web/servlet.html)
-
-### Guides
-
-The following guides illustrate how to use some features concretely:
-
-* [Accessing Data with JPA](https://spring.io/guides/gs/accessing-data-jpa/)
-* [SpringDoc OpenAPI](https://github.com/springdoc/springdoc-openapi-demos/)
-* [Building a RESTful Web Service](https://spring.io/guides/gs/rest-service/)
-* [Serving Web Content with Spring MVC](https://spring.io/guides/gs/serving-web-content/)
-* [Building REST services with Spring](https://spring.io/guides/tutorials/rest/)
-
-### Maven Parent overrides
-
-Due to Maven's design, elements are inherited from the parent POM to the project POM.
-While most of the inheritance is fine, it also inherits unwanted elements like `<license>` and `<developers>` from the
-parent.
-To prevent this, the project POM contains empty overrides for these elements.
-If you manually switch to a different parent and actually want the inheritance, you need to remove those overrides.
-
-
-
-
-
-# Admin Service Application Deployment Guide
-
-## Spring Boot + PostgreSQL + Docker + Kubernetes (Minikube)
+This repository is part of a complete DevOps learning journey where the application will gradually evolve from a simple Kubernetes deployment to a production-ready deployment using Helm, CI/CD, monitoring, ingress, and AWS.
 
 ---
 
-# Architecture
+# Technology Stack
+
+| Technology | Version |
+|------------|----------|
+| Java | 21 |
+| Spring Boot | 4.x |
+| PostgreSQL | 17 |
+| Docker | Latest |
+| Kubernetes | Minikube |
+| Maven | Wrapper (mvnw) |
+
+---
+
+# Phase 1 Architecture
 
 ```text
 Minikube Cluster
 │
 ├── Namespace: database
 │     ├── PostgreSQL Deployment
-│     └── PostgreSQL Service
+│     └── PostgreSQL Service (ClusterIP)
 │
-└── Namespace: app1
-      ├── Spring Boot Deployment
-      └── Spring Boot Service (NodePort)
+└── Namespace: dev
+      ├── Admin Service Deployment
+      └── Admin Service Service (NodePort)
 ```
+
+---
+
+# Application Flow
+
+```text
+Client
+   │
+   ▼
+admin-service (NodePort)
+   │
+   ▼
+Admin Service Pod
+   │
+   ▼
+postgres-service.database.svc.cluster.local
+   │
+   ▼
+PostgreSQL Pod
+```
+
+---
+
+# Project Structure
+
+```text
+admin-service
+│
+├── src/
+│
+├── k8s/
+│   │
+│   ├── namespaces/
+│   │      ├── database-namespace.yaml
+│   │      └── dev-namespace.yaml
+│   │
+│   ├── database/
+│   │      ├── postgres-deployment.yaml
+│   │      └── postgres-service.yaml
+│   │
+│   └── admin-service/
+│          ├── admin-deployment.yaml
+│          └── admin-service.yaml
+│
+├── Dockerfile
+├── pom.xml
+├── mvnw
+├── mvnw.cmd
+└── README.md
+```
+
+---
+
+# Kubernetes Namespace Strategy
+
+This project uses two namespaces.
+
+## database
+
+The **database** namespace contains infrastructure-related components.
+
+Current Resources
+
+- PostgreSQL Deployment
+- PostgreSQL Service
+
+Future Resources
+
+- Redis
+- Kafka
+- RabbitMQ
+- MongoDB
+
+---
+
+## dev
+
+The **dev** namespace contains application workloads.
+
+Current Resources
+
+- Admin Service Deployment
+- Admin Service Service
+
+Future Resources
+
+- Employee Service
+- User Service
+- API Gateway
+- Config Server
+- Authentication Service
+
+---
+
+# Why Separate Namespaces?
+
+Separating infrastructure from applications is considered a Kubernetes best practice.
+
+Benefits
+
+- Better isolation
+- Easier security management
+- Independent scaling
+- Cleaner resource organization
+- Easier migration to cloud
+
+Later, PostgreSQL can be migrated to
+
+- Amazon RDS
+- Azure Database
+- Google Cloud SQL
+- Dedicated Kubernetes Cluster
+
+without changing the application architecture.
 
 ---
 
 # Prerequisites
 
-Verify installation:
+Verify the required tools are installed.
+
+### Docker
 
 ```powershell
 docker --version
 ```
 
+---
+
+### Kubernetes CLI
+
 ```powershell
 kubectl version --client
 ```
+
+---
+
+### Minikube
 
 ```powershell
 minikube version
 ```
 
-Check Minikube status:
+---
+
+### Start Minikube
+
+```powershell
+minikube start
+```
+
+---
+
+### Verify Cluster
 
 ```powershell
 kubectl get nodes
 ```
 
-Expected:
+Expected Output
 
 ```text
-NAME       STATUS   ROLES           AGE
+NAME       STATUS   ROLES
 minikube   Ready    control-plane
 ```
 
 ---
 
-# Create Namespaces
+# Create Kubernetes Namespaces
+
+Apply the namespace manifests.
 
 ```powershell
-kubectl create namespace database
+kubectl apply -f k8s/namespaces/
 ```
 
-```powershell
-kubectl create namespace app1
-```
-
-Verify:
+Verify
 
 ```powershell
 kubectl get namespaces
 ```
 
-Expected:
+Expected Output
 
 ```text
+NAME
 database
-app1
+dev
 default
 kube-system
 ```
 
 ---
 
-# PostgreSQL Deployment
+# Deploy PostgreSQL
 
-## postgres-deployment.yaml
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-
-metadata:
-  name: postgres
-  namespace: database
-
-spec:
-  replicas: 1
-
-  selector:
-    matchLabels:
-      app: postgres
-
-  template:
-    metadata:
-      labels:
-        app: postgres
-
-    spec:
-      containers:
-        - name: postgres
-          image: postgres:17
-
-          ports:
-            - containerPort: 5432
-
-          env:
-            - name: POSTGRES_DB
-              value: postgres
-
-            - name: POSTGRES_USER
-              value: postgres
-
-            - name: POSTGRES_PASSWORD
-              value: "2001"
-```
-
-Apply:
+Deploy PostgreSQL resources.
 
 ```powershell
-kubectl apply -f postgres-deployment.yaml
+kubectl apply -f k8s/database/
 ```
 
----
-
-# PostgreSQL Service
-
-## postgres-service.yaml
-
-```yaml
-apiVersion: v1
-kind: Service
-
-metadata:
-  name: postgres-service
-  namespace: database
-
-spec:
-  selector:
-    app: postgres
-
-  ports:
-    - port: 5432
-      targetPort: 5432
-
-  type: ClusterIP
-```
-
-Apply:
+Verify Deployment
 
 ```powershell
-kubectl apply -f postgres-service.yaml
+kubectl get deployments -n database
 ```
 
-Verify:
+Verify Pod
 
 ```powershell
 kubectl get pods -n database
 ```
 
+Expected
+
+```text
+NAME                         READY   STATUS
+postgres-xxxxxxxxxx          1/1     Running
+```
+
+---
+
+Verify Service
+
 ```powershell
 kubectl get svc -n database
 ```
 
-Expected:
+Expected
 
 ```text
-postgres-service
+NAME                TYPE        CLUSTER-IP
+postgres-service    ClusterIP   10.x.x.x
+```
+
+---
+
+# Verify PostgreSQL Connectivity
+
+Connect to PostgreSQL.
+
+```powershell
+kubectl exec -it -n database deployment/postgres -- psql -U postgres
+```
+
+List Schemas
+
+```sql
+\dn
+```
+
+Expected
+
+```text
+Employee_app
+public
+```
+
+List Tables
+
+```sql
+\dt Employee_app.*
+```
+
+Exit PostgreSQL
+
+```sql
+\q
 ```
 
 ---
 
 # Spring Boot Configuration
 
-## application.properties
+Update the datasource configuration.
 
 ```properties
 spring.application.name=admin-service
@@ -224,30 +317,27 @@ server.port=9007
 spring.datasource.url=jdbc:postgresql://postgres-service.database.svc.cluster.local:5432/postgres
 spring.datasource.username=postgres
 spring.datasource.password=2001
+
 spring.datasource.driver-class-name=org.postgresql.Driver
 
-spring.jpa.properties.hibernate.default_schema=Employee_app
-spring.jpa.properties.hibernate.hbm2ddl.create_namespaces=true
 spring.jpa.hibernate.ddl-auto=update
+
+spring.jpa.properties.hibernate.default_schema=Employee_app
+
+spring.jpa.properties.hibernate.hbm2ddl.create_namespaces=true
 ```
 
 ---
 
-# Build Application
+# Build the Application
 
-Skip tests:
-
-```powershell
-mvn clean install -DskipTests
-```
-
-If Maven is not installed globally:
+Using Maven Wrapper
 
 ```powershell
 .\mvnw clean install -DskipTests
 ```
 
-Expected:
+Expected
 
 ```text
 BUILD SUCCESS
@@ -257,182 +347,169 @@ BUILD SUCCESS
 
 # Build Docker Image
 
+Build the Docker image.
+
 ```powershell
 docker build -t admin-service:v1 .
 ```
 
-Verify:
+Verify the image.
 
 ```powershell
 docker images
 ```
 
-Expected:
+Expected Output
 
 ```text
-admin-service    v1
+REPOSITORY      TAG
+admin-service   v1
 ```
 
 ---
 
-# Load Image into Minikube
+# Load Docker Image into Minikube
+
+Since Minikube has its own container runtime, load the image into the Minikube cluster.
 
 ```powershell
 minikube image load admin-service:v1
 ```
 
-Verify:
+Verify
 
 ```powershell
 minikube image ls | findstr admin-service
 ```
 
-Expected:
+Expected
 
 ```text
-admin-service:v1
+docker.io/library/admin-service:v1
 ```
 
 ---
 
-# Spring Boot Deployment
+# Deploy Admin Service
 
-## employee-app.yaml
-
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-
-metadata:
-  name: employee-app
-  namespace: app1
-
-spec:
-  replicas: 1
-
-  selector:
-    matchLabels:
-      app: employee-app
-
-  template:
-    metadata:
-      labels:
-        app: employee-app
-
-    spec:
-      containers:
-        - name: employee-app
-          image: admin-service:v1
-          imagePullPolicy: Never
-
-          ports:
-            - containerPort: 9007
-
----
-apiVersion: v1
-kind: Service
-
-metadata:
-  name: employee-app-service
-  namespace: app1
-
-spec:
-  selector:
-    app: employee-app
-
-  ports:
-    - port: 9007
-      targetPort: 9007
-
-  type: NodePort
-```
-
-Deploy:
+Deploy the application.
 
 ```powershell
-kubectl apply -f employee-app.yaml
+kubectl apply -f k8s/admin-service/
+```
+
+Expected
+
+```text
+deployment.apps/admin-service created
+service/admin-service created
 ```
 
 ---
 
 # Verify Deployment
 
-Pods:
+Check Deployments
 
 ```powershell
-kubectl get pods -n app1
+kubectl get deployments -n dev
 ```
 
-Deployments:
-
-```powershell
-kubectl get deployments -n app1
-```
-
-Services:
-
-```powershell
-kubectl get svc -n app1
-```
-
-Expected:
+Expected
 
 ```text
-employee-app
-employee-app-service
+NAME            READY
+admin-service   1/1
 ```
 
 ---
 
-# Check Application Logs
+Check Pods
 
 ```powershell
-kubectl logs -n app1 deployment/employee-app
+kubectl get pods -n dev
 ```
 
-Successful startup:
+Expected
+
+```text
+NAME                               READY   STATUS
+admin-service-xxxxxxxxxx           1/1     Running
+```
+
+---
+
+Check Services
+
+```powershell
+kubectl get svc -n dev
+```
+
+Expected
+
+```text
+NAME            TYPE
+admin-service   NodePort
+```
+
+---
+
+# View Application Logs
+
+View deployment logs.
+
+```powershell
+kubectl logs -n dev deployment/admin-service
+```
+
+Expected
 
 ```text
 Tomcat started on port 9007
-Started EmployeeManagementApplication
+
+Started AdminServiceApplication
 ```
+
+You should also see Hibernate successfully connecting to PostgreSQL.
 
 ---
 
-# Verify Schema Creation
+# Verify Database Objects
 
-Connect to PostgreSQL:
+Connect to PostgreSQL.
 
 ```powershell
 kubectl exec -it -n database deployment/postgres -- psql -U postgres
 ```
 
-Check schemas:
+Show Schemas
 
 ```sql
 \dn
 ```
 
-Expected:
+Expected
 
 ```text
 Employee_app
 public
 ```
 
-Check tables:
+---
+
+Show Tables
 
 ```sql
 \dt Employee_app.*
 ```
 
-Expected:
+Expected
 
 ```text
 users
 ```
 
-Exit PostgreSQL:
+Exit PostgreSQL
 
 ```sql
 \q
@@ -440,30 +517,36 @@ Exit PostgreSQL:
 
 ---
 
-# Access Application
+# Access the Application
 
-Get URL:
+Since Minikube is running using the Docker driver on Windows, expose the service using:
 
 ```powershell
-minikube service employee-app-service -n app1 --url
+minikube service admin-service -n dev --url
 ```
 
-Example:
+Example Output
 
 ```text
 http://127.0.0.1:57098
 ```
 
-> Keep this terminal open. Minikube creates a tunnel for NodePort access when using the Docker driver on Windows.
+> **Important:** Keep this terminal window open. It maintains the tunnel to the NodePort service.
 
 ---
 
-# Test APIs
+# Test REST APIs
 
-## Get Users
+## Get All Users
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:57098/api/v1/users
+```
+
+Expected
+
+```json
+[]
 ```
 
 ---
@@ -477,142 +560,625 @@ $body = @{
 } | ConvertTo-Json
 
 Invoke-RestMethod `
-  -Uri http://127.0.0.1:57098/api/v1/user `
-  -Method POST `
-  -Body $body `
-  -ContentType "application/json"
+    -Uri http://127.0.0.1:57098/api/v1/user `
+    -Method POST `
+    -Body $body `
+    -ContentType "application/json"
 ```
 
 ---
 
-## Verify User
+## Verify User Creation
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:57098/api/v1/users
 ```
 
----
+Expected
 
-# Useful Kubernetes Commands
-
-## View All Pods
-
-```powershell
-kubectl get pods -A
-```
-
-## View Pods in App Namespace
-
-```powershell
-kubectl get pods -n app1
-```
-
-## View Pods in Database Namespace
-
-```powershell
-kubectl get pods -n database
-```
-
-## View Services
-
-```powershell
-kubectl get svc -A
-```
-
-## View Deployments
-
-```powershell
-kubectl get deployments -A
-```
-
-## View Logs
-
-```powershell
-kubectl logs -n app1 deployment/employee-app
-```
-
-## Delete Deployment
-
-```powershell
-kubectl delete deployment employee-app -n app1
-```
-
-## Delete Service
-
-```powershell
-kubectl delete svc employee-app-service -n app1
+```json
+[
+  {
+    "id":1,
+    "username":"Arul",
+    "role":"ADMIN"
+  }
+]
 ```
 
 ---
 
-# Application Upgrade Flow
+# Updating the Application
 
-Whenever application code changes:
+Whenever code changes are made, follow this sequence.
+
+## Step 1 - Build the Project
 
 ```powershell
-mvn clean install -DskipTests
+.\mvnw clean install -DskipTests
 ```
+
+---
+
+## Step 2 - Build Docker Image
 
 ```powershell
 docker build -t admin-service:v1 .
 ```
 
+---
+
+## Step 3 - Load Image into Minikube
+
 ```powershell
 minikube image load admin-service:v1
 ```
 
-```powershell
-kubectl rollout restart deployment employee-app -n app1
-```
+---
 
-Check status:
+## Step 4 - Restart Deployment
 
 ```powershell
-kubectl rollout status deployment employee-app -n app1
+kubectl rollout restart deployment/admin-service -n dev
 ```
 
 ---
 
-# Learning Summary
+## Step 5 - Verify Rollout
 
-### Docker
-
-- Dockerfile
-- Image
-- Container
-- Docker Build
-
-### Kubernetes
-
-- Namespace
-- Pod
-- Deployment
-- Service
-- ClusterIP
-- NodePort
-- Logs
-- Rollout Restart
-
-### Spring Boot
-
-- REST API
-- JPA
-- Hibernate
-- PostgreSQL Integration
-- Automatic Schema Creation
-
-### Final Architecture
-
-```text
-employee-app (Namespace: app1)
-        |
-        |
-        v
-postgres-service (Namespace: database)
-        |
-        |
-        v
-postgres Pod
+```powershell
+kubectl rollout status deployment/admin-service -n dev
 ```
 
-The application never talks directly to the PostgreSQL Pod. It communicates through the Kubernetes Service (`postgres-service`), which provides stable service discovery and load balancing.
+Expected
+
+```text
+deployment "admin-service" successfully rolled out
+```
+
+---
+
+# Common Verification Commands
+
+Check all namespaces
+
+```powershell
+kubectl get namespaces
+```
+
+---
+
+Check all deployments
+
+```powershell
+kubectl get deployments -A
+```
+
+---
+
+Check all pods
+
+```powershell
+kubectl get pods -A
+```
+
+---
+
+Check all services
+
+```powershell
+kubectl get svc -A
+```
+
+---
+
+Describe Deployment
+
+```powershell
+kubectl describe deployment admin-service -n dev
+```
+
+---
+
+Describe Pod
+
+```powershell
+kubectl describe pod <pod-name> -n dev
+```
+
+---
+
+Watch Pods
+
+```powershell
+kubectl get pods -n dev -w
+```
+
+---
+
+View Logs
+
+```powershell
+kubectl logs -f deployment/admin-service -n dev
+```
+
+---
+
+Delete Deployment
+
+```powershell
+kubectl delete deployment admin-service -n dev
+```
+
+---
+
+Delete Service
+
+```powershell
+kubectl delete service admin-service -n dev
+```
+
+---
+
+Recreate Application
+
+```powershell
+kubectl apply -f k8s/admin-service/
+```
+
+---
+
+# Troubleshooting
+
+## Pod is in ImagePullBackOff
+
+Verify the image exists inside Minikube.
+
+```powershell
+minikube image ls | findstr admin-service
+```
+
+If the image is missing, load it again.
+
+```powershell
+minikube image load admin-service:v1
+```
+
+Restart the deployment.
+
+```powershell
+kubectl rollout restart deployment/admin-service -n dev
+```
+
+---
+
+## Pod is in CrashLoopBackOff
+
+View the application logs.
+
+```powershell
+kubectl logs deployment/admin-service -n dev
+```
+
+Common reasons
+
+- Incorrect datasource URL
+- PostgreSQL not running
+- Invalid application.properties
+- Missing environment variables
+
+---
+
+## PostgreSQL Pod Not Starting
+
+Check the pod.
+
+```powershell
+kubectl get pods -n database
+```
+
+View logs.
+
+```powershell
+kubectl logs deployment/postgres -n database
+```
+
+Describe the pod.
+
+```powershell
+kubectl describe pod <postgres-pod-name> -n database
+```
+
+---
+
+## Cannot Access REST APIs
+
+Verify the service.
+
+```powershell
+kubectl get svc -n dev
+```
+
+Expose the service.
+
+```powershell
+minikube service admin-service -n dev --url
+```
+
+Keep the terminal window open while accessing the application.
+
+---
+
+## Verify Kubernetes Resources
+
+Deployments
+
+```powershell
+kubectl get deployments -A
+```
+
+Pods
+
+```powershell
+kubectl get pods -A
+```
+
+Services
+
+```powershell
+kubectl get svc -A
+```
+
+Namespaces
+
+```powershell
+kubectl get namespaces
+```
+
+---
+
+# Clean Up Resources
+
+Delete only the Admin Service.
+
+```powershell
+kubectl delete -f k8s/admin-service/
+```
+
+Delete PostgreSQL.
+
+```powershell
+kubectl delete -f k8s/database/
+```
+
+Delete Namespaces.
+
+```powershell
+kubectl delete -f k8s/namespaces/
+```
+
+Delete everything inside the cluster.
+
+```powershell
+kubectl delete all --all -A
+```
+
+Delete the entire Minikube cluster.
+
+```powershell
+minikube delete
+```
+
+Start a fresh cluster.
+
+```powershell
+minikube start
+```
+
+---
+
+# DevOps Learning Roadmap
+
+This repository will gradually evolve into a production-ready Kubernetes deployment.
+
+## ✅ Phase 1 — Basic Kubernetes Deployment
+
+Completed
+
+- Spring Boot Application
+- PostgreSQL
+- Docker
+- Kubernetes
+- Namespaces
+- Deployments
+- Services
+- NodePort
+- ClusterIP
+
+---
+
+## 🔜 Phase 2 — Kubernetes Best Practices
+
+Topics
+
+- Separate YAML files
+- Labels
+- Selectors
+- Resource Limits
+- Requests
+- Readiness Probe
+- Liveness Probe
+- Startup Probe
+
+---
+
+## 🔜 Phase 3 — Configuration Management
+
+Topics
+
+- ConfigMap
+- Secret
+- Environment Variables
+- Volume Mounts
+
+---
+
+## 🔜 Phase 4 — Persistent Storage
+
+Topics
+
+- Persistent Volume (PV)
+- Persistent Volume Claim (PVC)
+- Storage Classes
+- PostgreSQL Persistent Storage
+
+---
+
+## 🔜 Phase 5 — Helm
+
+Topics
+
+- Helm Installation
+- Helm Charts
+- Templates
+- Values.yaml
+- Helpers
+- Release Management
+
+---
+
+## 🔜 Phase 6 — Multi-Environment Deployment
+
+Namespaces
+
+```text
+database
+dev
+sit
+uat
+preprod
+prod
+```
+
+Topics
+
+- Environment-specific configuration
+- Multiple Helm values files
+- Promotion strategy
+
+---
+
+## 🔜 Phase 7 — Ingress
+
+Topics
+
+- NGINX Ingress Controller
+- Host-based Routing
+- Path-based Routing
+- TLS/HTTPS
+
+---
+
+## 🔜 Phase 8 — CI/CD Pipeline
+
+Tools
+
+- GitHub Actions
+- Jenkins
+- Docker Hub / Container Registry
+
+Pipeline Flow
+
+```text
+Developer
+
+↓
+
+Git Push
+
+↓
+
+Build
+
+↓
+
+Unit Tests
+
+↓
+
+Docker Image
+
+↓
+
+Container Registry
+
+↓
+
+Deploy to Kubernetes
+```
+
+---
+
+## 🔜 Phase 9 — Monitoring
+
+Topics
+
+- Prometheus
+- Grafana
+- Metrics
+- Dashboards
+
+---
+
+## 🔜 Phase 10 — Logging
+
+Topics
+
+- Elasticsearch
+- Fluent Bit
+- Kibana
+
+---
+
+## 🔜 Phase 11 — Autoscaling
+
+Topics
+
+- Horizontal Pod Autoscaler (HPA)
+- Vertical Pod Autoscaler (VPA)
+
+---
+
+## 🔜 Phase 12 — Security
+
+Topics
+
+- RBAC
+- Service Accounts
+- Network Policies
+- Image Scanning
+
+---
+
+## 🔜 Phase 13 — AWS Migration
+
+Infrastructure
+
+```text
+Amazon EKS
+
+↓
+
+Amazon RDS PostgreSQL
+
+↓
+
+Amazon ECR
+
+↓
+
+Application Load Balancer
+
+↓
+
+CloudWatch
+
+↓
+
+Route53
+```
+
+---
+
+# Final Architecture
+
+Current Architecture
+
+```text
+                   Minikube Cluster
+────────────────────────────────────────────────────
+
+                Namespace : dev
+
+          +---------------------------+
+          |       admin-service       |
+          |      Deployment           |
+          +------------+--------------+
+                       |
+                       |
+                +------+------+
+                |  NodePort   |
+                |   Service   |
+                +------+------+
+                       |
+                       |
+                       ▼
+
+────────────────────────────────────────────────────
+
+             Namespace : database
+
+          +---------------------------+
+          |    postgres-service       |
+          |      ClusterIP            |
+          +------------+--------------+
+                       |
+                       |
+                +------+------+
+                | PostgreSQL  |
+                | Deployment  |
+                +-------------+
+
+────────────────────────────────────────────────────
+```
+
+---
+
+# Learning Outcomes
+
+After completing this project, you will have practical experience with:
+
+- Java 21
+- Spring Boot
+- Spring Data JPA
+- PostgreSQL
+- Docker
+- Docker Images
+- Docker Containers
+- Kubernetes
+- Pods
+- Deployments
+- Services
+- Namespaces
+- ClusterIP
+- NodePort
+- Service Discovery
+- Minikube
+- kubectl
+- YAML
+- Kubernetes Networking
+- Kubernetes Troubleshooting
+
+Future phases will introduce:
+
+- ConfigMaps
+- Secrets
+- Persistent Volumes
+- Helm
+- Ingress
+- CI/CD
+- Monitoring
+- Logging
+- Autoscaling
+- Security
+- AWS EKS
+
+---
+
+# Author
+
+**Arul Kumaran**
+
+This repository is maintained as a hands-on DevOps learning project to understand how enterprise-grade Java applications are deployed using Docker, Kubernetes, and modern DevOps practices.
+
+---
